@@ -1,0 +1,70 @@
+
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+
+# IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+gen/
+
+# Flutter
+.metadata
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+ios/
+android/
+web/
+linux/
+macos/
+windows/
+
+# Android
+**/android/generated/
+**/android/outputs/
+**/android/captures/
+**/android/app/src/main/assets/flutter_assets/
+**/android/key.properties
+
+# iOS
+**/ios/Pods/
+**/ios/Flutter/App.framework
+**/ios/Flutter/engine.version
+**/ios/Flutter/flutter_assets/
+**/ios/Runner/GeneratedPluginRegistrant.*
+
+# macOS
+**/macos/Pods/
+**/macos/Flutter/ephemeral/
+**/macos/Flutter/app.framework
+**/macos/Flutter/engine.version
+**/macos/Flutter/flutter_assets/
+**/macos/Runner/GeneratedPluginRegistrant.*
+**/macos/Runner/Assets.xcassets/
+
+# Linux
+**/linux/flutter/ephemeral/
+
+# Windows
+**/windows/flutter/ephemeral/
+
+# General
+/build/
+/ios/
+/android/
+/web/
+/linux/
+/macos/
+/windows/
