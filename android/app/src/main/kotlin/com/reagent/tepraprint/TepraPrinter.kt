@@ -32,11 +32,21 @@ class TepraPrinter(private val device: BluetoothDevice) {
     /** プリンターへ接続する。失敗時は [IOException] をスローする。 */
     @Throws(IOException::class)
     fun connect() {
-        socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
+    socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
+    try {
         socket!!.connect()
-        outputStream = socket!!.outputStream
-        Log.d(TAG, "Connected to ${device.name} (${device.address})")
+    } catch (e: IOException) {
+        Log.w(TAG, "SPP UUID connect failed (${e.message}), retrying via channel 1 reflection")
+        socket?.close()
+        @Suppress("DiscouragedPrivateApi")
+        socket = device.javaClass
+            .getMethod("createRfcommSocket", Int::class.java)
+            .invoke(device, 1) as BluetoothSocket
+        socket!!.connect()
     }
+    outputStream = socket!!.outputStream
+    Log.d(TAG, "Connected to ${device.name} (${device.address})")
+}
 
     /**
      * ラベル Bitmap を ESC/P ラスター形式でプリンターへ送信する。
