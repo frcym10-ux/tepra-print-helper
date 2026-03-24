@@ -24,7 +24,6 @@ class PrintStatusActivity : Activity() {
         private const val PREF_NAME = "tepra_settings"
         private const val PREF_PRINTER_ADDRESS = "printer_address"
         private const val REQ_BT_PERMISSION = 1001
-        /** SR5500P の Bluetooth アドレス（初回起動時のデフォルト） */
         private const val DEFAULT_PRINTER_ADDRESS = "68:84:7E:64:E4:B7"
     }
 
@@ -80,7 +79,7 @@ class PrintStatusActivity : Activity() {
                 ?: TepraLabel.fromJson(jsonObj)
             startPrinting(firstLabel)
         } else {
-            toast("Bluetooth 接続権限が必要です")
+            toast("Bluetooth接続権限が必要です")
             finish()
         }
     }
@@ -88,13 +87,12 @@ class PrintStatusActivity : Activity() {
     private fun startPrinting(label: TepraLabel) {
         val adapter = (getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
         if (adapter == null || !adapter.isEnabled) {
-            toast("Bluetooth を有効にしてください")
+            toast("Bluetoothを有効にしてください")
             finish()
             return
         }
 
-        // 保存済みアドレス → デフォルト値 → 選択ダイアログ の順で試みる
-        val savedAddress = prefs.getString(PREF_PRINTER_ADDRESS, DEFAULT_PRINTER_ADDRESS)
+        val savedAddress: String? = prefs.getString(PREF_PRINTER_ADDRESS, DEFAULT_PRINTER_ADDRESS)
         if (savedAddress != null) {
             executePrint(adapter, savedAddress, label)
         } else {
@@ -111,7 +109,7 @@ class PrintStatusActivity : Activity() {
         }
 
         val candidates = paired.filter { device ->
-            device.name?.contains("TEPRA",  ignoreCase = true) == true ||
+            device.name?.contains("TEPRA", ignoreCase = true) == true ||
             device.name?.contains("SR5500", ignoreCase = true) == true
         }.ifEmpty { paired }
 
@@ -134,8 +132,11 @@ class PrintStatusActivity : Activity() {
     }
 
     private fun executePrint(adapter: BluetoothAdapter, address: String, label: TepraLabel) {
-        val labelJson = intent.getStringExtra(EXTRA_LABEL_JSON) ?: return finish()
-        val jsonObj = org.json.JSONObject(labelJson)
+        val labelJson = intent.getStringExtra(EXTRA_LABEL_JSON) ?: run {
+            finish()
+            return
+        }
+        val jsonObj = JSONObject(labelJson)
         val labels = TepraLabel.fromJsonArray(jsonObj).ifEmpty { listOf(label) }
 
         val device = adapter.getRemoteDevice(address)
@@ -156,8 +157,6 @@ class PrintStatusActivity : Activity() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Print failed: ${e.message}", e)
-                // read failed は TepraPrinter 側でリフレクション再試行済み。
-                // アドレスはリセットせず保持したまま終了する。
                 handler.post {
                     toast("印刷に失敗しました: ${e.message}")
                     finish()
