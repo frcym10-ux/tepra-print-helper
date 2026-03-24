@@ -31,6 +31,7 @@ class PrintStatusActivity : Activity() {
         private const val PREF_NAME = "tepra_settings"
         private const val PREF_PRINTER_ADDRESS = "printer_address"
         private const val REQ_BT_PERMISSION = 1001
+        private const val DEFAULT_PRINTER_ADDRESS = "68:84:7E:64:E4:B7"
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -69,7 +70,7 @@ class PrintStatusActivity : Activity() {
             return
         }
 
-        startPrinting(firstLabel)
+        startPrinting(val savedAddress = prefs.getString(PREF_PRINTER_ADDRESS, DEFAULT_PRINTER_ADDRESS))
     }
 
     override fun onRequestPermissionsResult(
