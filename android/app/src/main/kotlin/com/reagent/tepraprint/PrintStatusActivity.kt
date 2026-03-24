@@ -46,8 +46,11 @@ class PrintStatusActivity : Activity() {
             return
         }
 
-        val label = try {
-            TepraLabel.fromJson(JSONObject(labelJson))
+        // {"labels":[...]} 配列形式または旧来の単一ラベル形式の両方に対応
+        val firstLabel = try {
+            val jsonObj = JSONObject(labelJson)
+            TepraLabel.fromJsonArray(jsonObj).firstOrNull()
+                ?: TepraLabel.fromJson(jsonObj)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse label JSON", e)
             toast("印刷データの解析に失敗しました")
@@ -63,11 +66,10 @@ class PrintStatusActivity : Activity() {
                 arrayOf(Manifest.permission.BLUETOOTH_CONNECT),
                 REQ_BT_PERMISSION
             )
-            // label を保持して onRequestPermissionsResult で再開
             return
         }
 
-        startPrinting(label)
+        startPrinting(firstLabel)
     }
 
     override fun onRequestPermissionsResult(
@@ -80,7 +82,10 @@ class PrintStatusActivity : Activity() {
 
         if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
             val labelJson = intent.getStringExtra(EXTRA_LABEL_JSON) ?: return finish()
-            startPrinting(TepraLabel.fromJson(JSONObject(labelJson)))
+            val jsonObj = JSONObject(labelJson)
+            val firstLabel = TepraLabel.fromJsonArray(jsonObj).firstOrNull()
+                ?: TepraLabel.fromJson(jsonObj)
+            startPrinting(firstLabel)
         } else {
             toast("Bluetooth 接続権限が必要です")
             finish()
@@ -140,17 +145,25 @@ class PrintStatusActivity : Activity() {
 
     /** バックグラウンドスレッドで接続・印刷を実行する。 */
     private fun executePrint(adapter: BluetoothAdapter, address: String, label: TepraLabel) {
+        // ラベル配列に変換（後方互換: 旧フォーマットは単一ラベルとして扱う）
+        val labelJson = intent.getStringExtra(EXTRA_LABEL_JSON) ?: return finish()
+        val jsonObj = org.json.JSONObject(labelJson)
+        val labels = TepraLabel.fromJsonArray(jsonObj).ifEmpty { listOf(label) }
+
         val device = adapter.getRemoteDevice(address)
         val printer = TepraPrinter(device)
 
-        toast("印刷中...")
+        toast("印刷中... (${labels.size}枚)")
 
         Thread {
             try {
                 printer.connect()
-                printer.print(label)
+                for (lbl in labels) {
+                    val bitmap = TepraLabelRenderer.render(lbl)
+                    printer.print(bitmap, lbl.tapeWidthMm)
+                }
                 handler.post {
-                    toast("印刷完了")
+                    toast("印刷完了 (${labels.size}枚)")
                     finish()
                 }
             } catch (e: Exception) {

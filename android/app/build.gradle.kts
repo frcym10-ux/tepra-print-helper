@@ -37,6 +37,7 @@ android {
 
 dependencies {
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
+    implementation("com.google.zxing:core:3.5.3")
 }
 
 flutter {

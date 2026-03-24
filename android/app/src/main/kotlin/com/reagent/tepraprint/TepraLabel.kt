@@ -7,8 +7,7 @@ data class TepraLabel(
     val reagentName: String,
     val lotNumber: String,
     val expiryDate: String,
-    val quantity: String,
-    val unit: String
+    val tapeWidthMm: Int = 18,
 ) {
     companion object {
         fun fromJson(json: JSONObject) = TepraLabel(
@@ -16,8 +15,13 @@ data class TepraLabel(
             reagentName   = json.optString("reagentName",   ""),
             lotNumber     = json.optString("lotNumber",     ""),
             expiryDate    = json.optString("expiryDate",    ""),
-            quantity      = json.optString("quantity",      ""),
-            unit          = json.optString("unit",          "")
+            tapeWidthMm   = json.optInt("tapeWidthMm", 18),
         )
+
+        /** {"labels":[{...},{...}]} 形式の JSON から複数ラベルを解析する */
+        fun fromJsonArray(json: JSONObject): List<TepraLabel> {
+            val arr = json.optJSONArray("labels") ?: return emptyList()
+            return (0 until arr.length()).map { fromJson(arr.getJSONObject(it)) }
+        }
     }
 }

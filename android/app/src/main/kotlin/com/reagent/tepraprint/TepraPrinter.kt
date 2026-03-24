@@ -2,19 +2,21 @@ package com.reagent.tepraprint
 
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.util.Log
 import java.io.IOException
 import java.io.OutputStream
 import java.util.UUID
 
 /**
- * TEPRA SR5500P への Bluetooth SPP 接続・印刷を担当するクラス。
+ * TEPRA SR5500P への Bluetooth Classic SPP 接続・印刷を担当するクラス。
  *
- * 現状は Android 標準の SPP（シリアルポートプロファイル）で接続し、
- * ラベルデータをテキスト形式で送信するプレースホルダー実装。
- *
- * KING JIM の TEPRA Android SDK（.aar）を libs/ に配置したら、
- * [sendPrintCommand] 内の TODO 箇所を SDK の API 呼び出しに差し替えてください。
+ * プロトコル: TEPRA ESC/P ラスター形式
+ *   1. ESC @        (0x1B 0x40)           — 初期化
+ *   2. ESC i m      (0x1B 0x69 0x6D ..)   — テープ幅設定
+ *   3. ラスター行    (0x67 0x00 [n] [data]) — 1行ずつ送信
+ *   4. FF           (0x0C)                — 印刷・テープ排出
  */
 class TepraPrinter(private val device: BluetoothDevice) {
 
@@ -36,37 +38,74 @@ class TepraPrinter(private val device: BluetoothDevice) {
         Log.d(TAG, "Connected to ${device.name} (${device.address})")
     }
 
-    /** ラベルデータを送信して印刷を実行する。[connect] の後に呼ぶこと。 */
+    /**
+     * ラベル Bitmap を ESC/P ラスター形式でプリンターへ送信する。
+     * [connect] の後に呼ぶこと。
+     *
+     * @param bitmap       [TepraLabelRenderer.render] で生成したラベル Bitmap
+     * @param tapeWidthMm  テープ幅（mm）。Bitmap の幅と一致していること。
+     */
     @Throws(IOException::class)
-    fun print(label: TepraLabel) {
+    fun print(bitmap: Bitmap, tapeWidthMm: Int) {
         val stream = outputStream ?: throw IOException("Not connected to printer")
-        sendPrintCommand(stream, label)
+        sendTepraRaster(stream, bitmap, tapeWidthMm)
         stream.flush()
-        Log.d(TAG, "Print command sent for control number: ${label.controlNumber}")
+        Log.d(TAG, "Print data sent (${bitmap.width}×${bitmap.height} dots, tape=${tapeWidthMm}mm)")
     }
 
     /**
-     * プリンターへ送るバイト列を組み立てて書き込む。
+     * TEPRA ESC/P ラスターコマンドを組み立てて送信する。
      *
-     * TODO: KING JIM TEPRA SDK (.aar) が入手できたら、以下のプレースホルダーを
-     *       SDK の印刷 API に置き換えること。
-     *
-     * 置き換え例:
-     *   val sdk = KingJimTepraManager(device)
-     *   sdk.printLabel(label.toTepraSdkFormat())
+     * Bitmap レイアウト:
+     *   - X方向（Width）  = テープを横切る方向（テープ幅のドット数）
+     *   - Y方向（Height） = テープ送り方向（ラベル長のドット数）
+     * 各 Y 行が1ラスター行に対応する。
      */
-    private fun sendPrintCommand(stream: OutputStream, label: TepraLabel) {
-        // ---- プレースホルダー: テキスト形式で送信（接続確認用）----
-        val payload = buildString {
-            appendLine("管理番号: ${label.controlNumber}")
-            appendLine("試薬名  : ${label.reagentName}")
-            appendLine("ロットNo: ${label.lotNumber}")
-            appendLine("有効期限: ${label.expiryDate}")
-            appendLine("数 量  : ${label.quantity} ${label.unit}")
+    private fun sendTepraRaster(stream: OutputStream, bitmap: Bitmap, tapeWidthMm: Int) {
+        val dotsPerRow = TepraLabelRenderer.mmToDots(tapeWidthMm)
+        val bytesPerRow = (dotsPerRow + 7) / 8
+
+        // 1. 初期化（ESC @）
+        stream.write(byteArrayOf(0x1B, 0x40))
+
+        // 2. テープ幅設定（ESC i m [tapeCode] 0x00）
+        val tapeCode = tapeWidthToCode(tapeWidthMm)
+        stream.write(byteArrayOf(0x1B, 0x69.toByte(), 0x6D, tapeCode, 0x00))
+
+        // 3. ラスターデータ（Bitmap の各行）
+        for (y in 0 until bitmap.height) {
+            val rowBytes = ByteArray(bytesPerRow)
+            for (x in 0 until dotsPerRow.coerceAtMost(bitmap.width)) {
+                val pixel = bitmap.getPixel(x, y)
+                val luma = (Color.red(pixel) * 299 + Color.green(pixel) * 587 + Color.blue(pixel) * 114) / 1000
+                if (luma < 128) {
+                    // 黒ピクセル: MSB first でビットをセット
+                    rowBytes[x / 8] = (rowBytes[x / 8].toInt() or (0x80 ushr (x % 8))).toByte()
+                }
+            }
+            // ラスター行ヘッダー: 0x67 0x00 [byte_count]
+            stream.write(byteArrayOf(0x67, 0x00, bytesPerRow.toByte()))
+            stream.write(rowBytes)
         }
-        stream.write(payload.toByteArray(Charsets.UTF_8))
-        // ---- ここまでプレースホルダー ----
+
+        // 4. 印刷・テープ排出（FF）
+        stream.write(byteArrayOf(0x0C))
     }
+
+    /**
+     * テープ幅(mm) → TEPRA プロトコルのテープ幅コードに変換する。
+     * SR5500P の対応テープ幅に合わせて定義。
+     */
+    private fun tapeWidthToCode(widthMm: Int): Byte = when (widthMm) {
+        4  -> 0x04
+        6  -> 0x06
+        9  -> 0x09
+        12 -> 0x0C
+        18 -> 0x12
+        24 -> 0x18
+        36 -> 0x24
+        else -> 0x12 // デフォルト: 18mm
+    }.toByte()
 
     /** 接続を閉じる。例外は握りつぶしてログに残す。 */
     fun disconnect() {
