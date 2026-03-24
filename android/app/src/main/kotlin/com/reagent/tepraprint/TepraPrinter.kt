@@ -32,29 +32,25 @@ class TepraPrinter(private val device: BluetoothDevice) {
     /** プリンターへ接続する。失敗時は [IOException] をスローする。 */
     @Throws(IOException::class)
     fun connect() {
-    socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
-    try {
-        socket!!.connect()
-    } catch (e: IOException) {
-        Log.w(TAG, "SPP UUID connect failed (${e.message}), retrying via channel 1 reflection")
-        socket?.close()
-        @Suppress("DiscouragedPrivateApi")
-        socket = device.javaClass
-            .getMethod("createRfcommSocket", Int::class.java)
-            .invoke(device, 1) as BluetoothSocket
-        socket!!.connect()
+        // まず標準の SPP UUID で接続を試みる
+        socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
+        try {
+            socket!!.connect()
+        } catch (e: IOException) {
+            // Android では "read failed, socket might closed" が出ることがある。
+            // UUID 経由が失敗した場合はリフレクションで channel 1 を直接指定して再試行する。
+            Log.w(TAG, "SPP UUID connect failed (${e.message}), retrying via channel 1 reflection")
+            socket?.close()
+            @Suppress("DiscouragedPrivateApi")
+            socket = device.javaClass
+                .getMethod("createRfcommSocket", Int::class.java)
+                .invoke(device, 1) as BluetoothSocket
+            socket!!.connect()
+        }
+        outputStream = socket!!.outputStream
+        Log.d(TAG, "Connected to ${device.name} (${device.address})")
     }
-    outputStream = socket!!.outputStream
-    Log.d(TAG, "Connected to ${device.name} (${device.address})")
-}
 
-    /**
-     * ラベル Bitmap を ESC/P ラスター形式でプリンターへ送信する。
-     * [connect] の後に呼ぶこと。
-     *
-     * @param bitmap       [TepraLabelRenderer.render] で生成したラベル Bitmap
-     * @param tapeWidthMm  テープ幅（mm）。Bitmap の幅と一致していること。
-     */
     @Throws(IOException::class)
     fun print(bitmap: Bitmap, tapeWidthMm: Int) {
         val stream = outputStream ?: throw IOException("Not connected to printer")
@@ -63,14 +59,6 @@ class TepraPrinter(private val device: BluetoothDevice) {
         Log.d(TAG, "Print data sent (${bitmap.width}×${bitmap.height} dots, tape=${tapeWidthMm}mm)")
     }
 
-    /**
-     * TEPRA ESC/P ラスターコマンドを組み立てて送信する。
-     *
-     * Bitmap レイアウト:
-     *   - X方向（Width）  = テープを横切る方向（テープ幅のドット数）
-     *   - Y方向（Height） = テープ送り方向（ラベル長のドット数）
-     * 各 Y 行が1ラスター行に対応する。
-     */
     private fun sendTepraRaster(stream: OutputStream, bitmap: Bitmap, tapeWidthMm: Int) {
         val dotsPerRow = TepraLabelRenderer.mmToDots(tapeWidthMm)
         val bytesPerRow = (dotsPerRow + 7) / 8
@@ -89,11 +77,9 @@ class TepraPrinter(private val device: BluetoothDevice) {
                 val pixel = bitmap.getPixel(x, y)
                 val luma = (Color.red(pixel) * 299 + Color.green(pixel) * 587 + Color.blue(pixel) * 114) / 1000
                 if (luma < 128) {
-                    // 黒ピクセル: MSB first でビットをセット
                     rowBytes[x / 8] = (rowBytes[x / 8].toInt() or (0x80 ushr (x % 8))).toByte()
                 }
             }
-            // ラスター行ヘッダー: 0x67 0x00 [byte_count]
             stream.write(byteArrayOf(0x67, 0x00, bytesPerRow.toByte()))
             stream.write(rowBytes)
         }
@@ -102,10 +88,6 @@ class TepraPrinter(private val device: BluetoothDevice) {
         stream.write(byteArrayOf(0x0C))
     }
 
-    /**
-     * テープ幅(mm) → TEPRA プロトコルのテープ幅コードに変換する。
-     * SR5500P の対応テープ幅に合わせて定義。
-     */
     private fun tapeWidthToCode(widthMm: Int): Byte = when (widthMm) {
         4  -> 0x04
         6  -> 0x06
@@ -114,10 +96,9 @@ class TepraPrinter(private val device: BluetoothDevice) {
         18 -> 0x12
         24 -> 0x18
         36 -> 0x24
-        else -> 0x12 // デフォルト: 18mm
+        else -> 0x12
     }.toByte()
 
-    /** 接続を閉じる。例外は握りつぶしてログに残す。 */
     fun disconnect() {
         try {
             outputStream?.close()
