@@ -1,0 +1,39 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Java 17 をセットアップ
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Flutter SDK をセットアップ
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.0'
+          channel: 'stable'
+
+      - name: 依存関係を取得
+        run: flutter pub get
+
+      - name: APK をビルド
+        run: flutter build apk --debug --no-tree-shake-icons
+
+      - name: APK をアップロード
+        uses: actions/upload-artifact@v4
+        with:
+          name: tepra-print-helper-debug
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 30
