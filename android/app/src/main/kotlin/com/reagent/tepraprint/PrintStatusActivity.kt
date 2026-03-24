@@ -16,13 +16,6 @@ import android.util.Log
 import android.widget.Toast
 import org.json.JSONObject
 
-/**
- * tepra-print:// URL スキームから受け取ったラベルデータを印刷するミニマルな Activity。
- * 印刷完了（または失敗）後に自動的に finish() する。
- *
- * プリンターの Bluetooth アドレスは SharedPreferences に保存され、
- * 初回のみ選択ダイアログが表示される。
- */
 class PrintStatusActivity : Activity() {
 
     companion object {
@@ -31,6 +24,7 @@ class PrintStatusActivity : Activity() {
         private const val PREF_NAME = "tepra_settings"
         private const val PREF_PRINTER_ADDRESS = "printer_address"
         private const val REQ_BT_PERMISSION = 1001
+        /** SR5500P の Bluetooth アドレス（初回起動時のデフォルト） */
         private const val DEFAULT_PRINTER_ADDRESS = "68:84:7E:64:E4:B7"
     }
 
@@ -47,7 +41,6 @@ class PrintStatusActivity : Activity() {
             return
         }
 
-        // {"labels":[...]} 配列形式または旧来の単一ラベル形式の両方に対応
         val firstLabel = try {
             val jsonObj = JSONObject(labelJson)
             TepraLabel.fromJsonArray(jsonObj).firstOrNull()
@@ -59,7 +52,6 @@ class PrintStatusActivity : Activity() {
             return
         }
 
-        // Android 12 (API 31) 以上はランタイムで BLUETOOTH_CONNECT 権限が必要
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -70,7 +62,7 @@ class PrintStatusActivity : Activity() {
             return
         }
 
-        startPrinting(val savedAddress = prefs.getString(PREF_PRINTER_ADDRESS, DEFAULT_PRINTER_ADDRESS))
+        startPrinting(firstLabel)
     }
 
     override fun onRequestPermissionsResult(
@@ -93,8 +85,6 @@ class PrintStatusActivity : Activity() {
         }
     }
 
-    // -------------------------------------------------------------------------
-
     private fun startPrinting(label: TepraLabel) {
         val adapter = (getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
         if (adapter == null || !adapter.isEnabled) {
@@ -103,7 +93,8 @@ class PrintStatusActivity : Activity() {
             return
         }
 
-        val savedAddress = prefs.getString(PREF_PRINTER_ADDRESS, null)
+        // 保存済みアドレス → デフォルト値 → 選択ダイアログ の順で試みる
+        val savedAddress = prefs.getString(PREF_PRINTER_ADDRESS, DEFAULT_PRINTER_ADDRESS)
         if (savedAddress != null) {
             executePrint(adapter, savedAddress, label)
         } else {
@@ -111,7 +102,6 @@ class PrintStatusActivity : Activity() {
         }
     }
 
-    /** ペアリング済みデバイスから TEPRA プリンターを選ばせる。 */
     private fun selectPrinterThenPrint(adapter: BluetoothAdapter, label: TepraLabel) {
         val paired = adapter.bondedDevices.toList()
         if (paired.isEmpty()) {
@@ -120,7 +110,6 @@ class PrintStatusActivity : Activity() {
             return
         }
 
-        // TEPRA / SR5500 という名前のデバイスを優先候補にする
         val candidates = paired.filter { device ->
             device.name?.contains("TEPRA",  ignoreCase = true) == true ||
             device.name?.contains("SR5500", ignoreCase = true) == true
@@ -144,9 +133,7 @@ class PrintStatusActivity : Activity() {
             .show()
     }
 
-    /** バックグラウンドスレッドで接続・印刷を実行する。 */
     private fun executePrint(adapter: BluetoothAdapter, address: String, label: TepraLabel) {
-        // ラベル配列に変換（後方互換: 旧フォーマットは単一ラベルとして扱う）
         val labelJson = intent.getStringExtra(EXTRA_LABEL_JSON) ?: return finish()
         val jsonObj = org.json.JSONObject(labelJson)
         val labels = TepraLabel.fromJsonArray(jsonObj).ifEmpty { listOf(label) }
@@ -169,12 +156,8 @@ class PrintStatusActivity : Activity() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Print failed: ${e.message}", e)
-                // アドレスが無効な場合はリセットして次回再選択できるようにする
-                if (e.message?.contains("read failed", ignoreCase = true) == true ||
-                    e.message?.contains("socket might closed", ignoreCase = true) == true
-                ) {
-                    prefs.edit().remove(PREF_PRINTER_ADDRESS).apply()
-                }
+                // read failed は TepraPrinter 側でリフレクション再試行済み。
+                // アドレスはリセットせず保持したまま終了する。
                 handler.post {
                     toast("印刷に失敗しました: ${e.message}")
                     finish()
