@@ -49,10 +49,19 @@ class TepraPrinter(private val device: BluetoothDevice) {
         val dotsPerRow = TepraLabelRenderer.mmToDots(tapeWidthMm)
         val bytesPerRow = (dotsPerRow + 7) / 8
 
+        // 1. 初期化
         stream.write(byteArrayOf(0x1B, 0x40))
+        Log.d(TAG, "Sent: ESC @ (initialize)")
 
+        // 2. テープ幅設定
         val tapeCode = tapeWidthToCode(tapeWidthMm)
         stream.write(byteArrayOf(0x1B, 0x69.toByte(), 0x6D, tapeCode, 0x00))
+        Log.d(TAG, "Sent: ESC i m (tape=${tapeWidthMm}mm, code=0x${"%02X".format(tapeCode)})")
+
+        // 3. ラスター行を1行ずつ送信
+        val nL = (bytesPerRow and 0xFF).toByte()
+        val nH = ((bytesPerRow shr 8) and 0xFF).toByte()
+        Log.d(TAG, "Raster: ${bitmap.height} rows, $bytesPerRow bytes/row (nL=0x${"%02X".format(nL)}, nH=0x${"%02X".format(nH)})")
 
         for (y in 0 until bitmap.height) {
             val rowBytes = ByteArray(bytesPerRow)
@@ -63,11 +72,17 @@ class TepraPrinter(private val device: BluetoothDevice) {
                     rowBytes[x / 8] = (rowBytes[x / 8].toInt() or (0x80 ushr (x % 8))).toByte()
                 }
             }
-            stream.write(byteArrayOf(0x67, 0x00, bytesPerRow.toByte()))
+            // ラスターコマンド: 0x67 0x00 nL nH [data] （2バイトリトルエンディアン長）
+            stream.write(byteArrayOf(0x67, 0x00, nL, nH))
             stream.write(rowBytes)
         }
 
+        // 4. 印刷・排出
         stream.write(byteArrayOf(0x0C))
+        stream.flush()
+        Log.d(TAG, "Sent: FF (print & eject) — waiting for printer to process")
+        // プリンターがデータを処理する時間を確保
+        Thread.sleep(1000)
     }
 
     private fun tapeWidthToCode(widthMm: Int): Byte = when (widthMm) {
