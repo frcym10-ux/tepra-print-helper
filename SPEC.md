@@ -388,7 +388,107 @@ Android Studio の Device Explorer または `adb pull` で取得して確認で
 
 ---
 
-## 10. ファイル構成
+## 10. TEPRA Web Print JavaScript API（PC印刷）
+
+### 概要
+
+PCに「テプラ クリエイター」+「WebAPI用通信モジュール」がインストールされている場合、
+ブラウザのJavaScriptから直接TEPRAプリンターに印刷できる。
+
+```
+ブラウザ(Next.js) → WebAPI通信モジュール(PC常駐) → プリンタドライバ → SR5500P
+```
+
+### PC側の必要ソフトウェア
+
+1. **テプラ クリエイター プリンタドライバ** (Ver 5.53 日本語版)
+2. **WebAPI用通信モジュール** — テプラ クリエイターのインストーラーから個別インストール
+3. **テプラ クリエイター本体** — テンプレート作成用（画像印刷のみなら不要の場合あり）
+
+### 印刷方式の使い分け
+
+| 端末 | 方式 | 必要なもの |
+|------|------|-----------|
+| Android スマホ | URLスキーム → tepra-print-helper アプリ | Androidアプリ |
+| PC ブラウザ | TEPRA Web API (JavaScript) | テプラ クリエイター + 通信モジュール |
+
+### 定数
+
+#### TepraPrintTapeID（テープ幅ID）
+
+| テープ幅 | ID値 |
+|---------|------|
+| 4mm | 274 |
+| 6mm | 259 |
+| 9mm | 260 |
+| 12mm | 261 |
+| 18mm | 262 |
+| 24mm | 263 |
+| 36mm | 264 |
+
+#### TepraPrintTapeCut（カット設定）
+
+| 設定 | 値 |
+|------|---|
+| EACH_LABEL (ラベル毎) | 0 |
+| AFTER_JOB (ジョブ毎) | 1 |
+| NOT_CUT (カットなし) | 2 |
+
+#### TepraPrintError（エラーコード）
+
+| コード | 値 | 内容 |
+|--------|---|------|
+| SUCCESS | 0 | 成功 |
+| PRINTER_NOT_FOUND | 1 | プリンター未検出 |
+| PRINTER_ACCESS_ERROR | 100 | プリンターアクセスエラー |
+| PRINT_START_ERROR | 101 | 印刷開始エラー |
+| WEBAPI_REQUEST_ERROR | 201 | Web API リクエストエラー |
+| WEBAPI_INTERNAL_ERROR | 202 | 通信モジュール内部エラー |
+| PRINT_MODULE_EXEC_ERROR | 203 | 印刷モジュール開始エラー |
+
+### JavaScript API 印刷フロー
+
+```javascript
+// 1. プリンター一覧取得
+const { printers } = await TepraPrint.getPrinter();
+
+// 2. プリンター作成
+const { printer } = await TepraPrint.createPrinter(printers[0]);
+
+// 3. パラメータ作成
+const { printParameter } = await printer.createPrintParameter();
+printParameter.copies = 1;
+printParameter.tapeCut = 0;  // EACH_LABEL
+printParameter.tape = 262;   // 18mm
+printParameter.stretchImage = false;
+
+// 4. 画像ファイルで印刷
+const { printJob } = await printer.doPrint(printParameter, { imageFile: pngFile });
+
+// 5. 完了待ち
+let done = false;
+while (!done) {
+    const progress = await printJob.progressOfPrint();
+    if (progress.jobEnd) done = true;
+}
+```
+
+### 実装ファイル（試薬管理システム側）
+
+```
+reagent-system/src/lib/tepra-webapi.ts  — Web APIクライアント + ラベル画像生成
+reagent-system/src/app/print/page.tsx   — 「PC TEPRA印刷」ボタン
+```
+
+### ラベル画像生成（Canvas）
+
+Web API では画像ファイル（PNG）を渡して印刷する。
+ブラウザの HTML Canvas で Android 版と同じレイアウト仕様の画像を生成する。
+レイアウト仕様はセクション4を参照。
+
+---
+
+## 11. ファイル構成
 
 ```
 tepra-print-helper/
