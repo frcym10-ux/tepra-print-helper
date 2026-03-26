@@ -51,14 +51,22 @@ class PrintStatusActivity : Activity() {
             return
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(
-                arrayOf(Manifest.permission.BLUETOOTH_CONNECT),
-                REQ_BT_PERMISSION
-            )
-            return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val needed = mutableListOf<String>()
+            if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.BLUETOOTH_CONNECT)
+            }
+            if (checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.BLUETOOTH_SCAN)
+            }
+            if (Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.NEARBY_WIFI_DEVICES)
+            }
+            if (needed.isNotEmpty()) {
+                requestPermissions(needed.toTypedArray(), REQ_BT_PERMISSION)
+                return
+            }
         }
 
         startPrinting(firstLabel)
@@ -139,14 +147,12 @@ class PrintStatusActivity : Activity() {
         val jsonObj = JSONObject(labelJson)
         val labels = TepraLabel.fromJsonArray(jsonObj).ifEmpty { listOf(label) }
 
-        val device = adapter.getRemoteDevice(address)
-        val printer = TepraPrinter(device)
+        val printer = TepraPrinter(this, address)
 
         toast("印刷中... (${labels.size}枚)")
 
         Thread {
             try {
-                printer.connect()
                 for (lbl in labels) {
                     val bitmap = TepraLabelRenderer.render(lbl)
                     printer.print(bitmap, lbl.tapeWidthMm)
@@ -161,8 +167,6 @@ class PrintStatusActivity : Activity() {
                     toast("印刷に失敗しました: ${e.message}")
                     finish()
                 }
-            } finally {
-                printer.disconnect()
             }
         }.start()
     }

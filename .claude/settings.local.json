@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__PDF__By_Anthropic___read_pdf_bytes",
+      "Bash(mkdir -p /tmp/tepra-sample)",
+      "Read(//tmp/**)",
+      "Bash(unzip -o \"C:\\\\Users\\\\HP\\\\Downloads\\\\TEPRA-Print_SDK_Android_Ver.1.3.0\\\\TEPRA-Print_SDK_Android_Ver.1.3.0\\\\Sample\\\\TepraPrintSimpleSample.zip\")",
+      "Bash(powershell -Command \"Expand-Archive -Force ''C:\\\\Users\\\\HP\\\\Downloads\\\\TEPRA-Print_SDK_Android_Ver.1.3.0\\\\TEPRA-Print_SDK_Android_Ver.1.3.0\\\\Sample\\\\TepraPrintSimpleSample.zip'' ''C:\\\\Users\\\\HP\\\\Downloads\\\\tepra-simple-sample''\")",
+      "Bash(SDK_DIR=\"C:\\\\Users\\\\HP\\\\Downloads\\\\TEPRA-Print_SDK_Android_Ver.1.3.0\\\\TEPRA-Print_SDK_Android_Ver.1.3.0\\\\jniLibs\")",
+      "Bash(DEST_DIR=\"D:\\\\HP\\\\Documents\\\\tepra-print-helper\\\\android\\\\app\\\\src\\\\main\\\\jniLibs\")",
+      "Bash(mkdir -p \"$DEST_DIR/arm64-v8a\" \"$DEST_DIR/armeabi-v7a\" \"$DEST_DIR/x86\" \"$DEST_DIR/x86_64\")",
+      "Bash(cp \"$SDK_DIR/arm64-v8a/libTepraPrint.so\" \"$DEST_DIR/arm64-v8a/\")",
+      "Bash(cp \"$SDK_DIR/armeabi-v7a/libTepraPrint.so\" \"$DEST_DIR/armeabi-v7a/\")",
+      "Bash(jar tf:*)",
+      "Bash(python3 -c \":*)",
+      "Bash(python -c \":*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
