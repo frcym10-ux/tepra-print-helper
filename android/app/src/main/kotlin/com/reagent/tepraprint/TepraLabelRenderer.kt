@@ -106,9 +106,9 @@ object TepraLabelRenderer {
         val infoPaint = buildPaint(infoSize)
 
         val lines = listOf(
-            "期限：${label.expiryDate}",
-            "Lot：${label.lotNumber}",
-            "管理番号：${label.controlNumber}"
+            "期限:${label.expiryDate}",
+            "Lot:${label.lotNumber}",
+            "管理番号:${label.controlNumber}"
         )
 
         // テキストが幅に収まるようサイズ調整
