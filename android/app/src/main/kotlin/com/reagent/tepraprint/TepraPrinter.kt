@@ -278,6 +278,128 @@ class TepraPrinter(private val context: Context, private val address: String) {
     }
 
     /**
+     * 複数ラベルを連続印刷する。
+     * discover / warmUp / setPrinterInformation は最初の1回だけ実行し、
+     * 2枚目以降は doPrint のみ行うことでBluetooth接続の安定性を向上させる。
+     */
+    @Throws(Exception::class)
+    fun printMultiple(bitmaps: List<Pair<Bitmap, Int>>) {
+        if (bitmaps.isEmpty()) return
+        if (bitmaps.size == 1) {
+            val (bitmap, tapeWidthMm) = bitmaps[0]
+            print(bitmap, tapeWidthMm)
+            return
+        }
+
+        Log.d(TAG, "printMultiple() called: ${bitmaps.size} labels")
+
+        // 1. プリンターを検出（1回だけ）
+        val printerInfo = discoverPrinter()
+        val mutableInfo = HashMap(printerInfo)
+        val host = mutableInfo[TepraPrintDiscoverPrinter.PRINTER_INFO_HOST] ?: ""
+        val serial = mutableInfo[TepraPrintDiscoverPrinter.PRINTER_INFO_SERIAL_NUMBER] ?: ""
+        if (host.isBlank() && serial.isNotBlank()) {
+            mutableInfo[TepraPrintDiscoverPrinter.PRINTER_INFO_HOST] = serial
+        }
+
+        // 2. Bluetooth warm-up（1回だけ）
+        warmUpBluetooth(serial.ifBlank { address })
+
+        // 3. プリンター情報設定（1回だけ）
+        tepraPrint.setPrinterInformation(mutableInfo)
+
+        // 4. テープ幅取得
+        var detectedTapeWidth = 0
+        try {
+            val tepraStatus = tepraPrint.fetchPrinterStatus()
+            if (tepraStatus != null && tepraStatus.isNotEmpty()) {
+                val deviceError = tepraPrint.getDeviceErrorFromStatus(tepraStatus)
+                if (deviceError == TepraPrintStatusError.NoError) {
+                    detectedTapeWidth = tepraPrint.getTapeWidthFromStatus(tepraStatus)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchPrinterStatus failed: ${e.message}")
+        }
+
+        // 5. 各ラベルを印刷
+        for ((index, pair) in bitmaps.withIndex()) {
+            val (bitmap, tapeWidthMm) = pair
+
+            if (index > 0) {
+                Log.d(TAG, "Waiting 5s before next label (${index + 1}/${bitmaps.size})...")
+                Thread.sleep(5000)
+            }
+
+            saveBitmapForDebug(bitmap)
+
+            val tapeWidth = if (detectedTapeWidth > 0) detectedTapeWidth else tapeWidthMmToSdkValue(tapeWidthMm)
+            val printParameter = HashMap<String, Any>()
+            printParameter[TepraPrintParameterKey.Copies] = 1
+            printParameter[TepraPrintParameterKey.TapeCut] = TepraPrintTapeCut.EachLabel
+            printParameter[TepraPrintParameterKey.HalfCut] = false
+            printParameter[TepraPrintParameterKey.PrintSpeed] = TepraPrintPrintSpeed.PrintSpeedHigh
+            printParameter[TepraPrintParameterKey.Density] = 0
+            printParameter[TepraPrintParameterKey.TapeWidth] = tapeWidth
+            printParameter[TepraPrintParameterKey.PriorityPrintSetting] = false
+            printParameter[TepraPrintParameterKey.HalfCutContinuous] = false
+
+            val latch = CountDownLatch(1)
+            lastError = null
+
+            tepraPrint.setCallback(object : TepraPrintCallback {
+                override fun onChangePrintOperationPhase(tp: TepraPrint, phase: Int) {
+                    val phaseName = when (phase) {
+                        TepraPrintPrintingPhase.Prepare -> "Prepare"
+                        TepraPrintPrintingPhase.Processing -> "Processing"
+                        TepraPrintPrintingPhase.WaitingForPrint -> "WaitingForPrint"
+                        TepraPrintPrintingPhase.Complete -> "Complete"
+                        else -> "Unknown($phase)"
+                    }
+                    Log.d(TAG, "Label ${index + 1}: Phase $phaseName")
+                    if (phase == TepraPrintPrintingPhase.Complete) {
+                        latch.countDown()
+                    }
+                }
+
+                override fun onSuspendPrintOperation(tp: TepraPrint, phase: Int, error: Int) {
+                    Log.w(TAG, "Label ${index + 1}: Suspended phase=$phase, error=$error")
+                    lastError = "印刷が中断されました (label=${index + 1}, error=$error)"
+                    latch.countDown()
+                }
+
+                override fun onAbortPrintOperation(tp: TepraPrint, phase: Int, error: Int) {
+                    Log.e(TAG, "Label ${index + 1}: Aborted phase=$phase, error=$error")
+                    lastError = "印刷が中止されました (label=${index + 1}, error=$error)"
+                    latch.countDown()
+                }
+
+                override fun onChangeTapeFeedOperationPhase(tp: TepraPrint, phase: Int) {
+                    Log.d(TAG, "Label ${index + 1}: Tape feed phase $phase")
+                }
+
+                override fun onAbortTapeFeedOperation(tp: TepraPrint, phase: Int, error: Int) {
+                    Log.e(TAG, "Label ${index + 1}: Tape feed aborted phase=$phase, error=$error")
+                }
+            })
+
+            Log.d(TAG, "Label ${index + 1}/${bitmaps.size}: doPrint (${bitmap.width}×${bitmap.height})")
+            tepraPrint.doPrint(bitmap, printParameter)
+
+            val completed = latch.await(60, TimeUnit.SECONDS)
+            if (!completed) {
+                throw Exception("印刷がタイムアウトしました（label ${index + 1}）")
+            }
+            if (lastError != null) {
+                throw Exception(lastError)
+            }
+            Log.d(TAG, "Label ${index + 1}/${bitmaps.size} printed successfully")
+        }
+
+        Log.d(TAG, "printMultiple() completed: all ${bitmaps.size} labels printed")
+    }
+
+    /**
      * テープ幅(mm) → SDK定数値に変換
      */
     private fun tapeWidthMmToSdkValue(widthMm: Int): Int = when (widthMm) {

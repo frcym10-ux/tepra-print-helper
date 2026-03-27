@@ -153,16 +153,13 @@ class PrintStatusActivity : Activity() {
 
         Thread {
             try {
-                for ((index, lbl) in labels.withIndex()) {
-                    // 2枚目以降はプリンターの処理完了を待つ
-                    if (index > 0) {
-                        Log.d(TAG, "Waiting 3s before next label (${index + 1}/${labels.size})...")
-                        Thread.sleep(3000)
-                    }
-                    val bitmap = TepraLabelRenderer.render(lbl)
-                    printer.print(bitmap, lbl.tapeWidthMm)
-                    Log.d(TAG, "Label ${index + 1}/${labels.size} printed")
+                // Bitmap + tapeWidth のペアリストを作成
+                val bitmapPairs = labels.map { lbl ->
+                    Pair(TepraLabelRenderer.render(lbl), lbl.tapeWidthMm)
                 }
+                // printMultiple: discover/warmUpは1回だけ、各ラベルはdoPrintのみ
+                printer.printMultiple(bitmapPairs)
+
                 handler.post {
                     toast("印刷完了 (${labels.size}枚)")
                     finish()
